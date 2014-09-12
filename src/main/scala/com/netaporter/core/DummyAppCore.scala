@@ -24,32 +24,31 @@ import akka.actor.OneForOneStrategy
  */
 class GetPetsWithOwnersActor(petService: ActorRef, ownerService: ActorRef) extends Actor {
 
-  var pets = Option.empty[Seq[Pet]]
-  var owners = Option.empty[Seq[Owner]]
-
   def receive = {
     case GetPetsWithOwners(names) if names.size > 2 => throw PetOverflowException
     case GetPetsWithOwners(names) => {
       petService ! GetPets(names)
       ownerService ! GetOwnersForPets(names)
-      context.become(waitingResponses)
+      context.become(handleResponses(None, None))
     }
   }
 
-  def waitingResponses: Receive = {
-    case Pets(petSeq) => {
-      pets = Some(petSeq)
-      replyIfReady
+  def handleResponses(pets: Option[Seq[Pet]], owners: Option[Seq[Owner]]): Receive = {
+    replyIfReady(pets, owners)
+
+    {
+      case Pets(petSeq) => {
+        context.become(handleResponses(Some(petSeq), owners))
+      }
+      case OwnersForPets(ownerSeq) => {
+        context.become(handleResponses(pets, Some(ownerSeq)))
+      }
+      case f: Validation => context.parent ! f
     }
-    case OwnersForPets(ownerSeq) => {
-      owners = Some(ownerSeq)
-      replyIfReady
-    }
-    case f: Validation => context.parent ! f
   }
 
-  def replyIfReady =
-    if(pets.nonEmpty && owners.nonEmpty) {
+  def replyIfReady(pets: Option[Seq[Pet]], owners: Option[Seq[Owner]]) =
+    if (pets.nonEmpty && owners.nonEmpty) {
       val petSeq = pets.head
       val ownerSeq = owners.head
 
